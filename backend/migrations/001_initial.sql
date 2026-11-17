@@ -54,3 +54,31 @@ CREATE TABLE `interventions` (
   CONSTRAINT `interventions_ibfk_1` FOREIGN KEY (`cohort_id`) REFERENCES `cohorts` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE `releases` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `request_id` varchar(64) NOT NULL,
+  `cohort_id` int NOT NULL,
+  `name` varchar(100) DEFAULT NULL,
+  `epsilon` decimal(6,4) NOT NULL,
+  `state` varchar(20) DEFAULT 'pending',
+  `result` json DEFAULT NULL,
+  `error` text,
+  `noise_seed` varchar(64) DEFAULT NULL,
+  `created_by` varchar(100) DEFAULT NULL,
+  `created` varchar(40) DEFAULT NULL,
+  `published` varchar(40) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `request_id` (`request_id`),
+  KEY `cohort_id` (`cohort_id`),
+  CONSTRAINT `releases_ibfk_1` FOREIGN KEY (`cohort_id`) REFERENCES `cohorts` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `privacy_budget` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `total` decimal(8,4) NOT NULL,
+  `spent` decimal(8,4) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+INSERT INTO `privacy_budget` (`id`, `total`, `spent`) VALUES (1, 1.0000, 0.0000);
+

@@ -3,12 +3,13 @@ import redis
 from fastapi import APIRouter,Depends,HTTPException,Response
 from sqlalchemy.exc import IntegrityError
 from src.config.database import db
-from src.models.entities import User,Event,Cohort,Intervention,Audit
-from src.schemas.business import Login,EventInput,CohortInput,InterventionInput,NoteInput
+from src.models.entities import User,Event,Cohort,Intervention,Audit,Release
+from src.schemas.business import Login,EventInput,CohortInput,InterventionInput,NoteInput,ReleaseInput
 from src.middlewares.auth import current,editor,admin
 from src.utils.security import verify,token
 from src.services.business import audit,dump
 from src.services.interventions import draft
+from src.services.privacy import create_release,dump_release,shared_view,budget_view
 from src.controllers.business import ensure_cohort,ensure_intervention
 router=APIRouter()
 @router.post('/auth/login')
@@ -76,3 +77,28 @@ def action_export(i:int,u=Depends(current),s=Depends(db)):
  r=ensure_intervention(s,i);return dump(r)
 @router.get('/audits')
 def audits(u=Depends(admin),s=Depends(db)):return [dump(r) for r in s.query(Audit).order_by(Audit.id.desc()).limit(100)]
+@router.get('/budget')
+def budget(u=Depends(current),s=Depends(db)):return budget_view(s)
+@router.get('/releases')
+def releases(u=Depends(current),s=Depends(db)):return [dump_release(r) for r in s.query(Release).order_by(Release.id.desc()).all()]
+@router.get('/releases/shared')
+def shared(u=Depends(current),s=Depends(db)):return [shared_view(r) for r in s.query(Release).filter_by(state='published').order_by(Release.id.desc()).all()]
+@router.post('/releases')
+def release(data:ReleaseInput,u=Depends(editor),s=Depends(db)):
+ r,new=create_release(s,data,u.email)
+ if not new:return dump_release(r)
+ try:redis.Redis.from_url(os.environ['REDIS_URL']).rpush('release:jobs',r.id)
+ except redis.RedisError:r.state='failed';r.error='队列暂不可用，请稍后重试';s.commit();raise HTTPException(503,r.error)
+ audit(s,u,'提交差分隐私发布 '+str(r.id));return dump_release(r)
+@router.post('/releases/{i}/withdraw')
+def withdraw(i:int,u=Depends(editor),s=Depends(db)):
+ r=s.get(Release,i)
+ if not r:raise HTTPException(404,'发布不存在')
+ if r.state!='published':raise HTTPException(409,'仅已发布记录可撤回；撤回不返还已消耗预算')
+ r.state='withdrawn';s.commit();audit(s,u,'撤回差分隐私发布 '+str(i)+'（预算不返还）');return dump_release(r)
+@router.get('/releases/{i}/export')
+def release_export(i:int,u=Depends(current),s=Depends(db)):
+ r=s.get(Release,i)
+ if not r:raise HTTPException(404,'发布不存在')
+ if r.state!='published':raise HTTPException(409,'仅已发布的扰动结果可导出')
+ return Response(json.dumps(shared_view(r),ensure_ascii=False,indent=2),media_type='application/json',headers={'Content-Disposition':f'attachment; filename="learning-release-{i}.json"'})

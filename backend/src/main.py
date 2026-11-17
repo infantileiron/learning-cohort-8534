@@ -2,13 +2,17 @@ import os,logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI,Request
 from fastapi.responses import JSONResponse
-from src.config.database import Base,engine
+from src.config.database import Base,engine,Session
 from src.models import entities
+from src.models.entities import PrivacyBudget
+from src.services.privacy import TOTAL_EPSILON
 from src.routes.api import router
 from src.middlewares.request import RequestId,SecurityHeaders
 @asynccontextmanager
 async def lifespan(app):
  Base.metadata.create_all(engine)
+ with Session() as s:
+  if not s.get(PrivacyBudget,1):s.add(PrivacyBudget(id=1,total=TOTAL_EPSILON,spent=0));s.commit()
  if os.getenv('SEED_DEMO')=='true':
   try:
    from scripts.seed_demo import seed

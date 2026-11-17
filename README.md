@@ -6,7 +6,7 @@
 
 模拟客户常青企业大学，运营组服务200名学员。原工作流从学习平台导出 `常青_学习事件_20261115.xlsx`，用工作簿手工找首学日期、统计每周回访，再复制缺席名单到周会纪要。三个痛点：同周多事件重复计人数、截断历史把老学员误算新客、未观察完整的周被当成零留存。上游是学习事件；本项目替代队列计算、成熟判断与成员核对；下游由学习负责人签核辅导安排。
 
-四个业务模块：事件台账（录入/完整字段修订）、队列配置、留存矩阵（冻结版本/成熟遮罩/成员来源）、干预清单（站内草案/管理员签核/导出）。业务实体为Event、Cohort、Intervention，另有User和Audit。
+四个业务模块：事件台账（录入/完整字段修订）、队列配置、留存矩阵（冻结版本/成熟遮罩/成员来源）、干预清单（站内草案/管理员签核/导出）。另有隐私发布模块：对冻结方案做差分隐私发布，共享扰动人数与剩余预算。业务实体为Event、Cohort、Intervention、Release、PrivacyBudget，另有User和Audit。
 
 |角色|权限与典型动作|
 |---|---|
@@ -35,6 +35,7 @@ docker compose exec -T backend python -m scripts.seed_demo
 6. 09:40 worker计算，点击刷新；核对分母、W0到W5、未成熟遮罩。
 7. 10:00 点击成熟列“查看未回访”，写“核对排班后安排站内学习辅导”，保存冻结成员。
 8. 10:10 admin签核；10:20 viewer下载 `learning-cohort-<id>.json` 和 `learning-members-<id>.json`。
+9. 10:30 对外共享改走隐私发布：选冻结方案、定本次ε（如0.2），待处理→已发布后页面展示扰动矩阵与剩余预算；导出 `learning-release-<id>.json` 仅含扰动结果。
 
 ## 计算口径与边界
 
@@ -46,6 +47,18 @@ docker compose exec -T backend python -m scripts.seed_demo
 
 干预清单只能选已成功方案、成熟非W0列且有未回访成员的单元格。成员由服务端从冻结结果生成，忽略客户端自报名单；未成熟/空清单409。签核后说明和名单不可覆盖。仅站内保留行动记录，不向学员外发消息。
 
+## 差分隐私发布
+
+共享留存表若反复发布精确人数，可经差分推断个人行为；因此对外共享只发扰动结果。发布对象是已计算成功的冻结方案（固定观察窗），内容为该窗整表计数向量：各首学周人数与成熟周回访人数。
+
+- 相邻数据集：增删同一学员（工号）的全部学习事件。任一学员最多改变1个首学人数与horizon+1个成熟周回访计数，整表L1敏感度Δ=horizon+2。
+- 机制：对每个计数独立加Laplace(0,b)噪声，b=Δ/ε；整表一次性发布满足纯ε-差分隐私（δ=0）。扰动值可能为负或小数，页面取整截断属后处理，不额外消耗预算。
+- 预算：全站累计ε_total=1，每次发布自选消耗（0.0001–1），提交与处理两侧均校验，超额拒绝且不扣费；撤回发布不返还已耗预算。
+- 生命周期：待处理→已发布/已拒绝（另可撤回）。worker单事务内完成预算扣减与结果可见，条件UPDATE防并发超支；客户端request_id幂等建单，噪声种子随待处理单落库，中断重试不重抽噪声、不重复扣费。
+- 最小化：共享入口`/releases/shared`与导出仅含扰动计数、机制参数与保证说明，不含工号、原始快照与精确计数；噪声种子永不序列化。内部干预清单仍用真实名单。
+
+验证：`docker compose exec -T backend python -m scripts.verify_privacy` 在一次性测试库校验多周贡献敏感度（Δ=horizon+2紧致）、并发争抢不超支、扣费中断重试一致与共享最小化，结束自动删库。
+
 ## 工程与本地开发
 
 |部分|实现|
@@ -55,7 +68,7 @@ docker compose exec -T backend python -m scripts.seed_demo
 |持久化|MySQL8、Redis7、命名产物卷|
 |worker|Redis任务队列、DB状态、心跳文件、启动恢复queued/running|
 
-目录：backend/src下routes/controllers/services/models/schemas/middlewares/config/utils/constants；frontend/src下api/stores/pages/components/common/hooks/utils/constants/types/router；backend/scripts/seed_demo.py；backend/migrations/001_initial.sql。所有计算/校验在Python，前端仅展示/交互。共有表格、表单字段、状态标签组件，form hook和HTML转义工具；请求ID与安全响应头两个中间件，写入业务审计和全局错误处理。
+目录：backend/src下routes/controllers/services/models/schemas/middlewares/config/utils/constants；frontend/src下api/stores/pages/components/common/hooks/utils/constants/types/router；backend/scripts/seed_demo.py与verify_privacy.py；backend/migrations/001_initial.sql。所有计算/校验在Python，前端仅展示/交互。共有表格、表单字段、状态标签组件，form hook和HTML转义工具；请求ID与安全响应头两个中间件，写入业务审计和全局错误处理。
 
 共享枚举：ROLES、STATES、COURSES、STAGES在后端src/constants/enums.py与前端src/constants/enums.js；schema/business.py约束课程与配置，models/entities.py存储状态。实例数据与队列名隔离；backend/worker依赖db和Redis健康，worker还等backend，frontend等backend。数据库、Redis和/artifacts均命名卷；五服务各有healthcheck。worker每轮刷新/tmp/heartbeat，结果在共享/artifacts。Nginx `/api/`去前缀代理到后端根路由。
 

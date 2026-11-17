@@ -1,4 +1,5 @@
 from datetime import datetime,date,timezone
+from decimal import Decimal
 from pydantic import BaseModel,Field,field_validator,model_validator
 from typing import Literal
 class Login(BaseModel):email:str;password:str
@@ -30,3 +31,8 @@ class InterventionInput(BaseModel):
  week_index:int=Field(ge=1,le=8)
  note:str=Field(min_length=8,max_length=2000)
 class NoteInput(BaseModel):note:str=Field(min_length=8,max_length=2000)
+class ReleaseInput(BaseModel):
+ cohort_id:int=Field(gt=0)
+ name:str=Field(min_length=2,max_length=100)
+ epsilon:Decimal=Field(gt=0,le=1,max_digits=6,decimal_places=4)
+ request_id:str=Field(min_length=8,max_length=64)

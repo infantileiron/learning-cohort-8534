@@ -1,1 +1,1 @@
-export const state={user:null,events:[],cohorts:[],interventions:[],selected:null,cell:null};
+export const state={user:null,events:[],cohorts:[],interventions:[],releases:[],budget:null,selected:null,cell:null};

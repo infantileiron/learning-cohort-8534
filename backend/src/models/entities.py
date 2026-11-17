@@ -1,4 +1,4 @@
-from sqlalchemy import Column,Integer,String,JSON,Text,ForeignKey
+from sqlalchemy import Column,Integer,String,JSON,Text,ForeignKey,Numeric
 from src.config.database import Base
 class User(Base):
  __tablename__='users'
@@ -15,3 +15,9 @@ class Intervention(Base):
 class Audit(Base):
  __tablename__='audits'
  id=Column(Integer,primary_key=True);actor=Column(String(100));action=Column(String(200));created=Column(String(40))
+class Release(Base):
+ __tablename__='releases'
+ id=Column(Integer,primary_key=True);request_id=Column(String(64),unique=True,nullable=False);cohort_id=Column(Integer,ForeignKey('cohorts.id'),nullable=False);name=Column(String(100));epsilon=Column(Numeric(6,4),nullable=False);state=Column(String(20),default='pending');result=Column(JSON,nullable=True);error=Column(Text,default='');noise_seed=Column(String(64));created_by=Column(String(100));created=Column(String(40));published=Column(String(40))
+class PrivacyBudget(Base):
+ __tablename__='privacy_budget'
+ id=Column(Integer,primary_key=True);total=Column(Numeric(8,4),nullable=False);spent=Column(Numeric(8,4),nullable=False,default=0)
